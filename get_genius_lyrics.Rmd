@@ -1,0 +1,228 @@
+---
+title: "Obtaining Lyrics Data"
+author: "Connor French"
+date: "3/21/2021"
+output: pdf_document
+---
+
+Load packages
+```{r, message=FALSE}
+library(geniusr)
+library(tidyverse)
+library(tidytext)
+library(textdata)
+library(here)
+```
+
+Get the lyrics for Buck Meek's album Two Saviors (the "positive" music). NOTE: Follow the [geniusr](https://ewenme.github.io/geniusr/) instructions first to authenticate yourself. Otherwise, you won't be able to access the API.  
+
+```{r}
+buck_tracklist <- get_album_tracklist_search("Buck Meek", "Two Saviors")
+
+
+buck_song_df <- map_df(buck_tracklist$song_lyrics_url, get_lyrics_url) %>%
+  group_by(song_name) %>% 
+  mutate(line_number = row_number()) %>% 
+  ungroup() 
+```
+
+
+Get the lyrics for Full of Hell's album Wheeping Choir (the "negative" music)
+```{r}
+foh_tracklist <- get_album_tracklist_search("Full of Hell", "Weeping Choir")
+
+foh_song_df <- map_df(foh_tracklist$song_lyrics_url, get_lyrics_url) %>%
+  group_by(song_name) %>% 
+  mutate(line_number = row_number()) %>% 
+  ungroup()
+```
+
+
+Put both into a single df
+```{r}
+total_df <- bind_rows(buck_song_df, foh_song_df)
+```
+
+This is the dataset for the workshop.  
+```{r, eval=FALSE}
+write_csv(total_df, here("data", "lyrics.csv"))
+```
+
+
+## Example analysis
+
+Get one line per token
+```{r}
+tidy_df <- total_df %>% 
+  unnest_tokens(word, line) 
+```
+
+
+Remove stop words
+```{r}
+no_stop_df <- tidy_df %>% 
+  anti_join(stop_words)
+```
+
+Check out the most common words for:
+
+Overall
+```{r}
+no_stop_df %>% 
+  count(word, sort = TRUE)
+```
+
+Buck Meek's most common words  
+
+```{r}
+no_stop_df %>% 
+  filter(artist_name == "Buck Meek") %>% 
+  count(word, sort = TRUE)
+```
+
+
+Visualize as a bar chart  
+
+```{r}
+no_stop_df %>%
+  filter(artist_name == "Buck Meek") %>% 
+  count(word, sort = TRUE) %>%
+  filter(n > 3) %>% 
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+```
+
+
+
+Most common words for Full of Hell  
+
+```{r}
+no_stop_df %>% 
+  filter(artist_name == "Full of Hell") %>% 
+  count(word, sort = TRUE)
+```
+
+```{r}
+no_stop_df %>%
+  filter(artist_name == "Full of Hell") %>% 
+  count(word, sort = TRUE) %>%
+  filter(n > 3) %>% 
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+```
+
+
+### Sentiment analysis
+
+Let's use the AFINN and Bing lexicons to get both a continuous and categorical idea of how these lyrics are structured.  
+
+```{r}
+afinn_sent <- get_sentiments("afinn")
+bing_sent <- get_sentiments("bing")
+```
+
+Now let's join this with the original data frame using an `inner_join`  
+
+```{r}
+afinn_df <- no_stop_df %>% 
+  inner_join(afinn_sent) %>% 
+  mutate(index = row_number()) %>% 
+  rename(afinn = value)
+```
+
+Visualize positivity of each artist.  
+
+Looks like Full of Hell has relatively more negativity than Buck Meek.  
+
+```{r}
+afinn_df %>% 
+  group_by(artist_name) %>% 
+  mutate(artist_index = row_number(),
+         overall_sent = if_else(
+           afinn >= 0, "positive", "negative"
+         )) %>% 
+  ggplot(aes(y = afinn, x = artist_index, fill = overall_sent)) +
+  geom_col() +
+  facet_wrap(~artist_name, nrow = 2)
+```
+
+
+Aggregating single words may not be good enough to get a sense of the sentiment of a body of text. Each song is divided into sections, like the verse, chorus, etc. (although it is not a perfect divide). Let's group the words by their song and section, then summarize the sentiment of each section by taking the sum.  
+
+```{r, message=FALSE}
+afinn_df %>% 
+  group_by(artist_name, song_name, section_name) %>% 
+  summarize(avg_vibe = sum(afinn)) %>% 
+  ggplot(aes(x = avg_vibe, color = artist_name)) +
+  geom_density()
+```
+What about a binary look? We can do this with the Bing lexicon
+```{r}
+bing_df <- no_stop_df %>% 
+  inner_join(bing_sent) %>% 
+  mutate(index = row_number())
+
+glimpse(bing_df)
+```
+
+```{r}
+sent_count_df <- bing_df %>% 
+  group_by(artist_name) %>% 
+  count(sentiment, sort = TRUE) %>% 
+  group_by(artist_name) %>% 
+  mutate(prop_sent = round(n / sum(n), 3)) %>% 
+  ungroup() 
+
+sent_count_df
+```
+Barplot to visualize counts.  
+```{r}
+sent_count_df %>% 
+  ggplot(aes(x = artist_name, y = n, fill = sentiment)) +
+  geom_col(position = "dodge")
+```
+
+
+Barplot to visualize proportions.  
+
+```{r}
+sent_count_df %>% 
+  ggplot(aes(x = artist_name, y = prop_sent, fill = sentiment)) +
+  geom_col()
+```
+### More serious data wrangling
+
+This is how text may appear if you don't get to use a fancy API to obtain your data. It's a single block with whitespace characters (`\n`) and extraneous classifiers (`[Verse 1]`, `[Instrumental Break]`). We want to get this into a tidy format, where each word is an observation and we have the line number for each word. To do this, we will use the powerful [stringr](https://stringr.tidyverse.org/) package.   
+
+These are Buck Meek lyrics from the album we analyzed earlier! I scraped these lyrics from the Genius web page, using the [rvest](https://rvest.tidyverse.org/) package. This is effectively what the Genius API does, but the API does some helpful transformation under the hood that we'll do here!  
+
+```{r}
+candle_lyrics <- "[Verse 1]\nInnocence is a light beam, you're doing your thing\nWith your arm out your window up Highway 9\nWhen it's too much to handle, burn me a candle\nIf you don't have a candle, let me burn on your mind\n[Verse 2]\nThe song of the sirens caught up with me downwind\nMy nose started bleeding by the second note\nHeaven is a motel with a telephone seashell\nWell, check-out's at eleven, and don't ask for more time\n[Chorus]\nWell, did your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew\n[Verse 3]\nI try not to call, but I think I'm being followed\nIt's been about an hour or so\nI hate for you to hear me scared, otherwise, I'm well\nI guess you're still the first place I go\n[Chorus]\nDid your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew\n[Instrumental Break]\n[Chorus]\nDid your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew"
+```
+
+
+Let's split this into lines. The `\n` whitespace character denotes a line break, so we can delimit the string based on this character!
+I'll split this into steps for the workshop
+```{r}
+candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist() %>% 
+  str_remove("\\[\\D+\\d+\\]") %>% 
+  str_remove("\\[\\D+\\]") %>% 
+  na_if("") %>% 
+  na.omit() %>% 
+  enframe(name = "line_number", value = "line") %>% 
+  unnest_tokens(word, line)
+```
+
+
+
+
+
+
+
+

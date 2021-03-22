@@ -1,0 +1,81 @@
+---
+title: "Text Analysis in R"
+author: "Connor French"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+**NOTE**: Much of this tutorial is adapted or copied from the wonderful (free!) book [Text Mining with R: a Tidy Approach](https://www.tidytextmining.com/index.html) by Julia Silge and David Robinson. I also *highly* recommend going through that book and Julia Silge's recent [Text mining with tidy data principles](https://juliasilge.shinyapps.io/learntidytext/) interactive tutorial if you want to take your tidy text analysis skills further. The tutorial's exercises are accessible, have a built-in feedback mechanism, and will jumpstart your ability to work with text in R!  
+
+I obtained the data for this tutorial using the [geniusr](https://ewenme.github.io/geniusr/) Genius API interface for R. [Genius](https://genius.com/) is a website that hosts song lyrics and user-contributed analyses of those lyrics. If you want to see how I obtained this data, I've provided a (poorly commented) [pdf](get_genius_lyrics.pdf) for your convenience. 
+
+## Introduction
+
+Using tidy data principles is a powerful way to make handling data easier and more effective, and this is no less true when it comes to dealing with text. As described by Hadley Wickham ([Wickham 2014](https://www.jstatsoft.org/v59/i10/paper)), tidy data has a specific structure:  
+
+* Each variable is a column  
+* Each observation is a row  
+* Each type of observational unit is a table  
+
+Tidy text format as is defined as a table with **one-token-per-row**. A *token* is a meaningful unit of text, such as a word, sentence, or n-gram, that we are interested in using for analysis, and *tokenization* is the process of splitting text into tokens. This format may be new to those who have performed text analysis using other methods, but hopefully by the end you are convinced of the utility of tidy text. The [tidytext](https://github.com/juliasilge/tidytext) R package, in concert with the [tidyverse](https://www.tidyverse.org/) series of packages, will help us reach the goal of turning our text into tidy text.   
+
+A typical text analysis workflow looks like this:  
+
+![Tidytext workflow](images/tt_wflow_1.png)
+We will follow this workflow to get you up and running with your own text analyses! If we have time at the end, we will also walk through a more involved use-case that you'll probably see in the wild to turn unstructured text into something that you can analyze.    
+
+## Get started
+
+Today, we're going to analyze the lyrics of two very different musical artists- the light and lilting indie-Americana musician [Buck Meek](https://www.buckmeekmusic.com/) and the merciless, pounding deathgrind band [Full of Hell](https://fullofhell.com/). We're going to see if the music matches up with the words- are Buck Meek's lyrics more positive than Full of Hell's? Or do their musical differences not match up with their lyrical differences? To answer this question, I obtained the lyrics from their most recent albums using the [geniusr](https://ewenme.github.io/geniusr/) API. Other than what the API does natively, I've performed minimal processing of the data.  
+
+To begin, we need to load the essential packages.    
+
+```{r, message=FALSE}
+# for data manipulation and plotting
+library(tidyverse)
+# for working with text data
+library(tidytext)
+# for obtaining the sentiment analysis lexicons
+library(textdata)
+# for file path management
+library(here)
+```
+
+Now, let's load the data! We'll call this `lyrics`. We have a few different variables. The most relevant variables for today's analysis are:    
+
+* `line`: the lyrics, where each row is a line of lyrics
+* `section_name`: The section of the song the lyrics are in, which in most cases is something like "Chorus", "Verse", etc. but it occasionally diverges  
+* `song_name`: The name of the song  
+* `artist_name`: the name of the song  
+* `line_number`: The line number each line of the song is associated with. This is a useful identifier for when we split this data set into words!  
+
+```{r, message=FALSE}
+lyrics <- read_csv(here("data", "lyrics.csv"))
+  
+glimpse(lyrics)
+```
+
+## Tidying our data
+
+To work with this as a tidy dataset, we need to restructure it in the **one-token-per-row** format, which is done with the `unnest_tokens()` function. With this function, the first argument is the name of the output column, the second argument is the name of the input column, and the third argument is the type of token you want to split your data into (there are quite a few options, use `?unnest_tokens()` to see them!).    
+
+```{r}
+tidy_lyrics <- lyrics %>% 
+  unnest_tokens(word, 
+                line,
+                token = "words") 
+
+glimpse(tidy_lyrics)
+```
+
+Notice that our data frame grew quite a bit! Each line was split into it's word components. We also know which line each word belongs to with the `line_number` variable. You might also notice that there are a lot of not-so-interesting words in the data set. Often in text analysis, we will want to remove these "stop words"; stop words are words that are not useful for an analysis, typically extremely common words such as “the”, “of”, “to”, and so forth in English. We can remove stop words (kept in the tidytext dataset `stop_words)` with an `anti_join()`. Notice the dramatic reduction in the number of rows in our data set!    
+
+```{r}
+lyrics_no_stop <- tidy_lyrics %>% 
+  anti_join(stop_words)
+
+glimpse(lyrics_no_stop)
+```
+
