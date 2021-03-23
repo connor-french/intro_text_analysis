@@ -70,12 +70,290 @@ tidy_lyrics <- lyrics %>%
 glimpse(tidy_lyrics)
 ```
 
-Notice that our data frame grew quite a bit! Each line was split into it's word components. We also know which line each word belongs to with the `line_number` variable. You might also notice that there are a lot of not-so-interesting words in the data set. Often in text analysis, we will want to remove these "stop words"; stop words are words that are not useful for an analysis, typically extremely common words such as “the”, “of”, “to”, and so forth in English. We can remove stop words (kept in the tidytext dataset `stop_words)` with an `anti_join()`. Notice the dramatic reduction in the number of rows in our data set!    
+Notice that our data frame grew quite a bit! Each line was split into it's word components. We also know which line each word belongs to with the `line_number` variable. You might also notice that there are a lot of not-so-interesting words in the data set. Often in text analysis, we will want to remove these "stop words"; stop words are words that are not useful for an analysis, typically extremely common words such as “the”, “of”, “to”, and so forth in English. We can remove stop words (kept in the tidytext dataset `stop_words)` with an `anti_join()`. `anti_join()` removes rows where values of a key match between two data sets. In this case, we're using the `word` columns as our key, so words that match between the `tidy_lyrics` data and the `stop_words` data are removed. Notice the dramatic reduction in the number of rows in our data set!    
 
 ```{r}
 lyrics_no_stop <- tidy_lyrics %>% 
-  anti_join(stop_words)
+  anti_join(stop_words, by = "word")
 
 glimpse(lyrics_no_stop)
+```
+
+## Explore our data
+
+One of the most fundamental ways to explore our data is through counting words. Fortunately, `dplyr` has a function that makes this easy. We tack on the `sort = TRUE` argument to sort the output text. Let's explore a few different subsets of our data.
+
+First, let's count the whole dataset.  
+
+```{r}
+lyrics_no_stop %>% 
+  count(word, sort = TRUE)
+```
+
+
+Now, let's look only at Buck Meek's most common words. These are some pleasant words.  
+
+```{r}
+lyrics_no_stop %>% 
+  filter(artist_name == "Buck Meek") %>% 
+  count(word, sort = TRUE)
+```
+
+While numbers are great and all, a quick data visualization makes patterns pop out. Here is a bar plot of the same data as above, with only the words that appear 4 or more times in the album. I rearranged the bars so that they appear in descending order of frequency.  
+
+```{r}
+lyrics_no_stop %>%
+  filter(artist_name == "Buck Meek") %>% 
+  count(word, sort = TRUE) %>%
+  filter(n > 3) %>% 
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+
+```
+
+Now, let's take a look at the most common words for Full of Hell! These seem quite a bit darker. Without even cracking open our favorite sentiment lexicon, we can see that the words used by the two bands have quite a different vibe.  
+
+```{r}
+lyrics_no_stop %>% 
+  filter(artist_name == "Full of Hell") %>% 
+  count(word, sort = TRUE)
+```
+
+## Sentiment Analysis
+
+When human readers approach a text, we use our understanding of the emotional intent of words to infer whether a section of text is positive or negative, or perhaps characterized by some other more nuanced emotion like surprise or disgust. We can use sentiment analysis to approach the emotional content of text programmatically.  
+
+![](images/sent_analysis.png)  
+
+One way to analyze the sentiment of a text is to consider the text as a combination of its individual words and the sentiment content of the whole text as the sum of the sentiment content of the individual words. This isn’t the only way to approach sentiment analysis, but it is an often-used approach, and an approach that naturally takes advantage of the tidy tool ecosystem.  
+
+To evaluate the sentiment of a text, we use dictionaries that map words or phrases to a particular sentiment. For instance, the word "sunshine" may be considered a positive word. These are called lexicons. There are many, where each is created for a particular context. When you select an existing lexicon or create your own, it is important to understand its particular biases and nuances. The word "sunshine" may be considered positive when interpreting children's book texts, but negative when interpreting accounts of the Dust Bowl.  
+
+For this workshop, we're going to use the [AFINN](http://www2.imm.dtu.dk/pubdb/views/publication_details.php?id=6010) and [Bing](https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html) lexicons. These lexicons are based on unigrams, i.e., single words. They contain many English words and the words are assigned scores for positive/negative sentiment. The `AFINN` lexicon assigns words with a score that runs between -5 and 5, with negative scores indicating negative sentiment and positive scores indicating positive sentiment. The `bing` lexicon categorizes words in a binary fashion into positive and negative categories. Although we won't do it here, I encourage you to explore these dictionaries and find places where the sentiment assignments make sense or don't make sense for the lyrics we're analyzing.  
+
+First, we need to obtain the lexicons. Some lexicons have licenses associated with them, so make sure that the license is appropriate for your project. We don't need to worry about license permissions for this workshop.  
+
+```{r}
+afinn_sent <- get_sentiments("afinn")
+bing_sent <- get_sentiments("bing")
+```
+
+
+The `AFINN` lexicon has a column for words, `word`, and the AFINN score, `value`.  
+```{r}
+glimpse(afinn_sent)
+```
+
+The `bing` lexicon has a column for words, `word`, and the binary sentiment, `sentiment`. There are quite a few more words in the `bing` lexicon relative to the `AFINN` lexicon.  
+
+```{r}
+glimpse(bing_sent)
+```
+
+
+### AFINN Analysis
+
+Let's take a look at the `AFINN` data set first. To analyze our data, we need to combine the lyrics with the lexicon. We will do that with an `inner_join()`, which only keeps rows where the key matches between the two data sets. We're also adding a unique identifier for each word with the `index` column and renaming the `value` column to `afinn`.    
+
+Notice that the rows are dramatically reduced- 185 words match between our lyrics data and the AFINN lexicon. If we were doing research, we may want to investigate the non-overlapping words and see if there is a different, more inclusive, lexicon for the lyrics.  
+
+```{r}
+afinn_df <- lyrics_no_stop %>% 
+  inner_join(afinn_sent, by = "word") %>% 
+  # unique identifier for each word
+  mutate(index = row_number()) %>% 
+  # a more useful name for the afinn score
+  rename(afinn = value)
+
+glimpse(afinn_df)
+```
+
+
+There are many ways to visualize the sentiment of our data. Since we have continuous values that have a defined midpoint (0), a diverging bar plot will give us a sense of the frequency and magnitude of positive and negative words in both artists.  
+
+Looks like we have some support for our hypothesis! The death metal band Full of Hell appears to have more words with negative connotations than Buck Meek. The `artist_index` also roughly corresponds to the word's position in the album, so Full of Hell seems to get more positive as the album progresses.     
+
+```{r}
+afinn_df %>% 
+  group_by(artist_name) %>% 
+  mutate(
+    # create a unique index per artist
+    artist_index = row_number(),
+    # create a binary positive/negative variable to color bars with and emphasize the positive vs negative relationship
+    overall_sent = if_else(
+      afinn >= 0, "positive", "negative"
+      )
+    ) %>% 
+  ggplot(aes(y = afinn, x = artist_index, fill = overall_sent)) +
+  geom_col() +
+  # unique pane per artist
+  facet_wrap(~artist_name, nrow = 2)
+```
+Aggregating single words may not be good enough to get a sense of the sentiment of a body of text. Each song is divided into sections, like the verse, chorus, etc. (although it is not a perfect divide). The overall sentiment of each section may give us a better sense of what feeling the artist is going for. Let's group the words by their song and section, then summarize the sentiment of each section by taking the sum. We'll also take a different approach to visualization- a histogram to compare the distributions of sentiment values without retaining their order in the album. This gives us a more direct look at the average and variation in sentiment of the two artists.  
+
+It looks like more support for our hypothesis! Although the magnitude of the difference is not quite as high as I would have imagined.  
+
+```{r, message=FALSE}
+afinn_df %>% 
+  group_by(artist_name, song_name, section_name) %>% 
+  summarize(avg_sent = sum(afinn)) %>% 
+  ggplot(aes(x = avg_sent, color = artist_name)) +
+  geom_density()
+```
+
+
+### Bing Analysis
+
+Now let's take a look at the `bing` binary lexicon.  
+
+We will join the lexicon with the lyrics in a similar manner as earlier.  
+
+It looks like the `bing` lexicon contains a few more words in common with the song lyrics than the `AFINN` data set.  
+
+```{r}
+bing_df <- lyrics_no_stop %>% 
+  inner_join(bing_sent, by = "word") %>% 
+  mutate(index = row_number())
+
+glimpse(bing_df)
+```
+
+Since we're dealing with categorical data (a binary "positive"/"negative" label), some sort of frequency chart is appropriate. Let's count the number of each sentiment associated with the artists.  
+
+We can count the sentiments like we counted words earlier! And we can even create a similar bar chart. It definitely looks like Full of Hell has more negative words than Buck Meek, and that they have a higher negative to positive ratio. But, this relationship is exaggerated because Full of Hell has more words overall compared to Buck Meek. To compare the relative number of negative vs positive words between artists, we need to use proportions!     
+
+```{r}
+sent_count_df <- bing_df %>% 
+  group_by(artist_name) %>% 
+  count(sentiment, sort = TRUE) 
+
+# plot the counts
+sent_count_df %>% 
+  ggplot(aes(x = artist_name, y = n, fill = sentiment)) +
+  geom_col(position = "dodge")
+```
+
+
+To convert to proportions, we need to divide the count (per artist) of each sentiment by the total. Then we can compare the proportions with a stacked bar plot.  
+
+The pattern is as expected, but the relative proportions are more clear.  
+```{r}
+sent_prop_df <- sent_count_df %>% 
+  group_by(artist_name) %>% 
+  mutate(prop_sent = n / sum(n)) %>% 
+  ungroup() 
+
+sent_prop_df %>% 
+  ggplot(aes(x = artist_name, y = prop_sent, fill = sentiment)) +
+  geom_col()
+```
+#### Going further
+This is a special section with a bit more advanced code that I won't take too long to explain. Look at the code comments for brief explanation!  
+
+We can even summarize counts by section. One way is to only take the most frequent sentiment as the overall sentiment of the section.  
+
+It looks like there were no positive sections for Full of Hell, while Buck Meek had close to a 50/50 split. Looks about right!  
+
+```{r}
+common_sent_df <- bing_df %>% 
+  # group by section name
+  group_by(artist_name, section_name) %>% 
+  # count the number of each sentiment (# positive, # negative)
+  count(sentiment) %>% 
+  # convert the data frame so each sentiment count has its own column (they are named "positive" and "negative")
+  pivot_wider(names_from = sentiment, values_from = n) %>%
+  mutate(
+    # some sections don't have a particular sentiment, which returns an NA. We want these to show up as 0 instead
+    positive = replace_na(positive, 0),
+    negative = replace_na(negative, 0),
+    # Now, we determine which is most common using an if_else statement.
+    common_sent = if_else(
+      positive > negative, "positive", "negative"
+  ))
+
+common_sent_df %>% 
+  group_by(artist_name) %>% 
+  count(common_sent) %>% 
+  ggplot(aes(x = artist_name, y = n, fill = common_sent)) +
+  geom_col(position = "dodge")
+```
+
+## More serious data wrangling
+
+This is how text may appear if you don't get to use a fancy API to obtain your data. It's a single text string with whitespace characters (`\n`) and extraneous classifiers (`[Verse 1]`, `[Instrumental Break]`). We want to get this into a tidy format, where each word is an observation and we have the line number for each word. To do this, we will use the powerful [stringr](https://stringr.tidyverse.org/) package.   
+
+These are Buck Meek lyrics from the album we analyzed earlier (the song is [Candle](https://www.youtube.com/watch?v=GT_bGcEGpYs)! I scraped these lyrics from the Genius web page, using the [rvest](https://rvest.tidyverse.org/) package. This is effectively what the Genius API does, but the API does some helpful transformation under the hood that we'll do here!  
+
+```{r}
+candle_lyrics <- "[Verse 1]\nInnocence is a light beam, you're doing your thing\nWith your arm out your window up Highway 9\nWhen it's too much to handle, burn me a candle\nIf you don't have a candle, let me burn on your mind\n[Verse 2]\nThe song of the sirens caught up with me downwind\nMy nose started bleeding by the second note\nHeaven is a motel with a telephone seashell\nWell, check-out's at eleven, and don't ask for more time\n[Chorus]\nWell, did your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew\n[Verse 3]\nI try not to call, but I think I'm being followed\nIt's been about an hour or so\nI hate for you to hear me scared, otherwise, I'm well\nI guess you're still the first place I go\n[Chorus]\nDid your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew\n[Instrumental Break]\n[Chorus]\nDid your eyes change? I remember them blue\nOr were they always hazel?\nStill the same face with a line or two\nThe same love I always knew"
+```
+
+I will split the process up into separate steps, then present them as a cohesive flow at the end. There are multiple ways you could parse this text, so don't feel like this is the "one way" to do it. And if you're a [regex superhero](https://xkcd.com/208/), I would definitely like to hear your more optimal solution.  
+
+Since we're interested in a single line of lyrics per row, we want to split this string by each line break. Fortunately, `\n` indicates where a line break occurs! To split this single string into a vector with a single line per observation, we will use `str_split` function. The first argument in `str_split()` needs to be a vector and the second needs to be a string pattern to match. Here, we're specifying `\n`, but we need to add an additional slash in the front. The initial slash "escapes" the second slash, since R considers slashes special characters. We also tack on `unlist()` at the end, because `str_split` returns a list of character vectors, rather than a single vector.  
+
+```{r}
+candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist()
+```
+
+This gets us most of the way there! We don't really want the section headers, like "[Chorus]", "[Verse 1]", etc. We could label each section with these headers, but for the sake of this exercise, lets just remove them.  
+
+To remove them, we need to use some regular expressions! We want to remove the brackets `[]`, letters, spaces, and digits. The regex expression `\D+` means "remove all non-digit characters", while `\d+` means "remove all digits". The extra slashes are used to escape these special characters. The entire pattern means "match anything that has letters, whitespace, or digits that is encased by brackets and remove the brackets as well". The `str_remove()` function removes this pattern from any line that contains it.  
+
+```{r}
+candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist() %>% 
+  str_remove("\\[\\D+\\d+\\]")
+```
+
+You may notice that there are a couple headers left! These headers don't contain digits. Regex patterns are picky, so we need to specify the same pattern, but with only non-digits in between brackets.  
+
+Great! Now we just need to get rid of those empty lines.  
+
+```{r}
+candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist() %>% 
+  str_remove("\\[\\D+\\d+\\]") %>% 
+  str_remove("\\[\\D+\\]")
+```
+
+To remove the empty lines, we just need to convert the blank space into `NA` values, then remove those.  
+
+```{r}
+candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist() %>% 
+  str_remove("\\[\\D+\\d+\\]") %>% 
+  str_remove("\\[\\D+\\]") %>% 
+  na_if("") %>% 
+  na.omit()
+```
+
+This is something we can work with! The last action we need to take is to convert this into a data frame. We can do this with `enframe()`. The "names" of the vector (in this case the row numbers) correspond with the line numbers of the song, so we're naming this variable `line_number` and the value is the line of lyrics, which we're calling `line`.    
+
+```{r}
+candle_df <- candle_lyrics %>%
+  str_split("\\n") %>% 
+  unlist() %>% 
+  str_remove("\\[\\D+\\d+\\]") %>% 
+  str_remove("\\[\\D+\\]") %>% 
+  na_if("") %>% 
+  na.omit() %>% 
+  enframe(name = "line_number", value = "line")
+
+candle_df
+```
+
+
+Now, all you have to do to make this tidy is use `unnest_tokens()`!  
+```{r}
+candle_df %>% 
+  unnest_tokens(word, line)
 ```
 
