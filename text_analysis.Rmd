@@ -9,7 +9,9 @@ output:
 
 **NOTE**: Much of this tutorial is adapted or copied from the wonderful (free!) book [Text Mining with R: a Tidy Approach](https://www.tidytextmining.com/index.html) by Julia Silge and David Robinson. I also *highly* recommend going through that book and Julia Silge's recent [Text mining with tidy data principles](https://juliasilge.shinyapps.io/learntidytext/) interactive tutorial if you want to take your tidy text analysis skills further. The tutorial's exercises are accessible, have a built-in feedback mechanism, and will jumpstart your ability to work with text in R!  
 
-I obtained the data for this tutorial using the [geniusr](https://ewenme.github.io/geniusr/) Genius API interface for R. [Genius](https://genius.com/) is a website that hosts song lyrics and user-contributed analyses of those lyrics. If you want to see how I obtained this data, I've provided a (poorly commented) [pdf](get_genius_lyrics.pdf) for your convenience. 
+I obtained the data for this tutorial using the [geniusr](https://ewenme.github.io/geniusr/) Genius API interface for R. [Genius](https://genius.com/) is a website that hosts song lyrics and user-contributed analyses of those lyrics. If you want to see how I obtained this data, I've provided a (poorly commented) [pdf](https://github.com/connor-french/intro_text_analysis/raw/main/get_genius_lyrics.pdf) for your convenience. 
+
+To go through this workshop, either download the repository as a zip file [here](https://github.com/connor-french/intro_text_analysis/archive/refs/heads/main.zip), or clone it on [github.com/connor-french/intro_text_analysis](https://github.com/connor-french/intro_text_analysis).  
 
 ## Introduction
 
