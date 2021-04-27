@@ -241,6 +241,7 @@ sent_count_df %>%
 To convert to proportions, we need to divide the count (per artist) of each sentiment by the total. Then we can compare the proportions with a stacked bar plot.  
 
 The pattern is as expected, but the relative proportions are more clear.  
+
 ```{r}
 sent_prop_df <- sent_count_df %>% 
   group_by(artist_name) %>% 
@@ -251,6 +252,7 @@ sent_prop_df %>%
   ggplot(aes(x = artist_name, y = prop_sent, fill = sentiment)) +
   geom_col()
 ```
+
 #### Going further
 This is a special section with a bit more advanced code that I won't take too long to explain. Look at the code comments for brief explanation!  
 
